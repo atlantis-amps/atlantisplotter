@@ -1,0 +1,27 @@
+Package: atlantisplotter
+Title: What the Package Does (One Line, Title Case)
+Version: 0.0.0.9000
+Authors@R: 
+    person("Hem Nalini", "Morzaria-Luna", , "HemNalini.MorzariaLuna@noaa.gov", role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: Plotter for Atlantis output.
+License: GNU AFFERO GENERAL PUBLIC LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: 
+    cowplot,
+    dplyr,
+    here,
+    magrittr,
+    purr,
+    rbgm,
+    RColorBrewer,
+    reshape2,
+    rnaturalearth,
+    simFrame,
+    sf,
+    tictoc,
+    tibble,
+    tidync,
+    viridis

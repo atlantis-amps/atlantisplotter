@@ -1,5 +1,5 @@
 ---
-title: "Atlantis Output Plots"
+title: "`r paste('Atlantis Output Plots - version')"
 output:
   html_document:
     toc: yes
@@ -9,38 +9,9 @@ output:
     toc: yes
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,warnings=FALSE)
-library(tidyverse)
-library(sf)
-library(rbgm)
-library(tidync)
-library(magrittr)
-library(cowplot)
-library(here)
-library(viridis)
-library(rnaturalearth)
-library(reshape2)
-library(RColorBrewer)
-library(tictoc)
-
-# ggplot theme
-plot_theme <-   theme_minimal()+
-  theme(text=element_text(family="sans",size=10,color="black"),
-        legend.text = element_text(size=10),
-        axis.title=element_text(family="sans",size=14,color="black"),
-        axis.text=element_text(family="sans",size=8,color="black"),
-        panel.grid.major = element_line(color="gray50",linetype=3))
-theme_set(plot_theme)
-
-options(dplyr.summarise.inform = FALSE)
-sf_use_s2(FALSE)
-```
-
-
 ```{r specify files}
 
-#set_options()
+set_options()
 
 thisfolder <- "outputFolder"
 thisbgmfile <- "PugetSound_89b_NAD83.bgm"
@@ -48,61 +19,24 @@ thesecountries <- c('Canada','United States') # Natural Earth regions to use as 
 outdietfile <- "AMPS_OUTDietCheck.txt"
 groups_csv <- "PugetSoundAtlantisFunctionalGroups_salmon_rectype4_bf.csv"
 thisoutncfile <- "AMPS_OUT.nc"
-thistime <- 365
 ```
 
+
 ```{r spatial data,include=F,echo=F}
-# file name here of downloaded .bgm file from current Atlantis model
+#read in bgm file
+bgm <- get_bgm(thisbgmfile, thisfolder)
 
-# IF RUNNING AS PART OF MANAGE_ATLANTIS_RUNS, THE source.dir should be inherited here
-fl <- here::here(thisfolder,thisbgmfile)
-# load the file
-bgm <- rbgm::read_bgm(fl)
-# names(bgm)
-emocc_sf <- rbgm::box_sf(bgm)
-st_crs(emocc_sf) <- sf::st_crs(attr(emocc_sf$geometry, "crs")$proj)
-# box_area <- emocc_sf %>% st_set_geometry(NULL) %>%  dplyr::select(box_id,area) %>% 
-#   mutate(sqkm=area/1e6)
-
-# load west cost land for mapping
-coaststates <- ne_countries(continent="North America",returnclass = 'sf') %>% 
-  filter(name %in% c('Canada','United States','Mexico'))
 ```
 
 ```{r functional groups table,include=F,echo=F,message=F}
 # grps <- read_csv(here::here(dir_input,'CalCurrentV4Groups_Dec2022.csv')) %>% mutate(Code=GroupType) %>% mutate(GroupType=InvertType)
-grps <- read_csv(here::here(thisfolder,groups_csv)) %>% dplyr::mutate(Code=GroupType) 
-
-# set up a functional group types table
-vertebrate_groups <- grps %>% 
-  dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% 
-  dplyr::mutate(BiomassType="vertebrate")
-
-plankton_groups <- grps %>% 
-  dplyr::filter(GroupType %in% c("PWN",'CEP','LG_ZOO','MED_ZOO','SM_ZOO','LG_PHY','SM_PHY')) %>% 
-  dplyr::mutate(BiomassType="plankton")
-
-bottom_groups <- grps %>% 
-  dplyr::filter(GroupType %in% c("MOB_EP_OTHER",'SED_EP_FF','SED_EP_OTHER','SEAGRASS','PHYTOBEN')) %>% 
-  dplyr::mutate(BiomassType="2D")
-
-other_groups <- grps %>% 
-  dplyr::filter(GroupType %in% c("LG_INF","MICROPHTYBENTHOS","SED_BACT","PL_BACT","SM_INF","CARRION","LAB_DET","REF_DET"))%>% 
-  dplyr::mutate(BiomassType="other")
-
-biomass_groups <- dplyr::bind_rows(vertebrate_groups,plankton_groups,bottom_groups,other_groups)
-
-# add to grps df
-grps <- grps %>% 
-  dplyr::left_join(biomass_groups) %>% 
-  filter(IsTurnedOn==1)
 ```
 
 ```{r load atlantis output,include=F,echo=F}
-tictoc::tic("Loading files: ")
+tic("Loading files: ")
 # output file
-out_fl <- here::here(thisfolder, thisoutncfile)
-out <- tidync::tidync(out_fl)
+out_fl <- here::here(dir_version, "outputFolder", thisoutncfile)
+out <- tidync(out_fl)
 this.nc <- ncdf4::nc_open(out_fl)
 
 # derived values for output
@@ -110,24 +44,18 @@ this.nc <- ncdf4::nc_open(out_fl)
 # glimpse(depths)
 
 # volumes of each layer
-volumes <- out %>% 
-  tidync::hyper_filter(t=t>365) %>% #tidync::hyper_filter(t=t==0) 
-  tidync::hyper_tibble(select_var="volume") %>% 
-  dplyr::select(-t)
+volumes <- out %>% hyper_filter(t=t==0) %>% hyper_tibble(select_var="volume") %>% dplyr::select(-t)
 
 # time dimension
-ts <- ncdf4::ncvar_get(this.nc,varid = "t") %>% 
-  as.numeric
+ts <- ncdf4::ncvar_get(this.nc,varid = "t") %>% as.numeric
 tyrs <- ts/(60*60*24*365)
 
 # area of each box is the same as volume of the deepest depth layer, because the dz of that layer is 1
-areas <- volumes %>% 
-  dplyr::filter(z==max(z)) %>% 
-  dplyr::select(b,volume) %>% dplyr::rename(area=volume)
+areas <- volumes %>% filter(z==max(z)) %>% dplyr::select(b,volume) %>% rename(area=volume)
 
 # functional group dimensions
-fg_dimensions <- tidync::hyper_grids(out) %>% 
-  purrr::pluck("grid") %>% 
+fg_dimensions <- hyper_grids(out) %>% 
+  pluck("grid") %>% 
   purrr::map_df(function(x){
     out %>% activate(x) %>% hyper_vars() %>% 
       mutate(grd=x)
@@ -136,8 +64,8 @@ fg_dimensions <- tidync::hyper_grids(out) %>%
 
 ```{r load atlantis diets}
 # diets table
-diet_check <- read.table(here::here(thisfolder, outdietfile), as.is = TRUE,header=TRUE,sep=" ")
-tictoc::toc()
+diet_check <- read.table(here::here(dir_version, "outputFolder", outdietfile), as.is = TRUE,header=TRUE,sep=" ")
+toc()
 ```
 
 ```{r}
@@ -154,32 +82,32 @@ setNA <- function(mat) {
 plot_abun <- function(fg){
   
   # if the species is TURNED OFF, return an empty plot
-  if(grps$IsTurnedOn[grps$Name==fg]==0) return(tibble(t=0,abun=0) %>% ggplot2::ggplot(aes(t,abun))+geom_blank())
+  if(grps$IsTurnedOn[grps$Name==fg]==0) return(tibble(t=0,abun=0) %>% ggplot(aes(t,abun))+geom_blank())
   # get the attributes associated with each functional group
-  fg_atts <- grps %>% dplyr::filter(Name==fg)
+  fg_atts <- grps %>% filter(Name==fg)
   #Extract from the output .nc file the appropriate time series variables
-  abun_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_Nums",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  abun_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_Nums",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
 # Actually pull the data from the .nc
   abun1 <- purrr::map(abun_vars$name,ncdf4::ncvar_get,nc=this.nc) %>% 
     lapply(setNA) %>%
     purrr::map(apply,MARGIN=3,FUN=sum,na.rm=T) %>% 
-    dplyr::bind_cols() %>% 
+    bind_cols() %>% 
     suppressMessages() %>% 
-    purrr::set_names(abun_vars$name) %>% 
-    dplyr::mutate(t=tyrs)
+    set_names(abun_vars$name) %>% 
+    mutate(t=tyrs)
   
   abun2 <- abun1 %>%
-    tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'abun') %>%
-    dplyr::mutate(age=parse_number(age_group))
+    pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'abun') %>%
+    mutate(age=parse_number(age_group))
   
   # plot
   plot_out <- abun2 %>%
     # filter(t>0) %>% # remove plotting artifact
-    ggplot2::ggplot(ggplot2::aes(t,abun/1e6,col=factor(age)))+
-    ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Numbers (Millions)",x="Year",title=paste0(fg_atts$LongName,"\nNumbers-at-Age"))
+    ggplot(aes(t,abun/1e6,col=factor(age)))+
+    geom_line()+
+    labs(col="Age Group",y="Numbers (Millions)",x="Year",title=paste0(fg_atts$LongName,"\nNumbers-at-Age"))
   
   return(plot_out)
   
@@ -209,7 +137,7 @@ plot_biomass <- function(fg){
   # 
   ## do checks on what kind of critter we're talking about and adjust accordingly
   # get the attributes associated with each functional group
-  fg_atts <- grps %>% dplyr::filter(Name==fg)
+  fg_atts <- grps %>% filter(Name==fg)
   fgt <- fg_atts$GroupType # get group type
   
   
@@ -218,7 +146,7 @@ plot_biomass <- function(fg){
     
     totbio <- apply(Ndat*c(volumes_arr)*(5.7*20/10^9),3,sum,na.rm=T) # multiply by volume of each layer and then sum across boxes and layers for each time step
     
-    Ndat2 <- tibble::tibble(t=tyrs,biomass=totbio)
+    Ndat2 <- tibble(t=tyrs,biomass=totbio)
 
   }
   
@@ -227,7 +155,7 @@ plot_biomass <- function(fg){
     
     totbio <- apply(Ndat*areas_vec*(5.7*20/10^9),2,sum,na.rm=T) # multiply by area of each layer and then sum across boxes and layers for each time step
     
-    Ndat2 <- tibble::tibble(t=tyrs,biomass=totbio)
+    Ndat2 <- tibble(t=tyrs,biomass=totbio)
   }
   
   # if it's other (like detritus and bacteria), leave it as a density (biomass/total volume), mg N/m^3
@@ -237,22 +165,22 @@ plot_biomass <- function(fg){
     
     totbio <- apply(Ndat*c(volumes_arr),3,sum,na.rm=T)/sum_volumes
     
-    Ndat2 <- tibble::tibble(t=tyrs,biomass=totbio)
+    Ndat2 <- tibble(t=tyrs,biomass=totbio)
   }
   # if it's missing (i.e., group is turned off), leave it as an empty df
   if(btype=="missing") {
     
-    Ndat2 <- tibble::tibble(t=tyrs,biomass=NA)
+    Ndat2 <- tibble(t=tyrs,biomass=NA)
   }
   
   # make the plot
   ylabel <- switch(btype, "other" = "mg N/m^3", "vertebrate" = "Metric Tons", "2D" = "Metric Tons","plankton" = "Metric Tons","missing"="Missing")
   plot_out <- Ndat2 %>% 
-    dplyr::mutate(btype=btype) %>%
+    mutate(btype=btype) %>%
     # filter(t>0) %>% # remove plotting artifact
-    ggplot2::ggplot(ggplot2::aes(t,biomass))+
-    ggplot2::geom_line()+
-    ggplot2::labs(y=ylabel,x="Year",title=paste0(fg_atts$LongName,"\nBiomass"))
+    ggplot(aes(t,biomass))+
+    geom_line()+
+    labs(y=ylabel,x="Year",title=paste0(fg_atts$LongName,"\nBiomass"))
   
   return(plot_out)
   
@@ -262,24 +190,24 @@ plot_biomass <- function(fg){
 ```{r}
 plot_wage_timeseries <- function(fg){
   # get the attributes associated with each functional group
-  fg_atts <- grps %>% dplyr::filter(Name==fg)
+  fg_atts <- grps %>% filter(Name==fg)
   
   if(fg_atts$BiomassType!="vertebrate") stop("weight at age only for vertebrates.")
   
   #Extract from the output .nc file the appropriate reserve N time series variables
-  resN_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_ResN",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  resN_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_ResN",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   #Extract from the output .nc file the appropriate structural N time series variables
-  strucN_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_StructN",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  strucN_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_StructN",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   # Get numbers by box
-  abun_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_Nums",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  abun_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_Nums",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   if(nrow(resN_vars)==0) {return("no data.")}
   else {
@@ -296,21 +224,21 @@ plot_wage_timeseries <- function(fg){
   # multiply and sum to get abundance-weighted mean weight at age
   rnsn_summ <- purrr::map2(rnsn,relnums,`*`) %>% 
     purrr::map(apply,MARGIN=3,FUN=sum) %>% # mean total N by time
-    dplyr::bind_cols() %>% # bind age groups elements together
+    bind_cols() %>% # bind age groups elements together
     suppressMessages() %>% 
-    purrr::set_names(resN_vars$name) %>% 
+    set_names(resN_vars$name) %>% 
     mutate(t=tyrs) %>%
     # pivot to long form
-    tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'totN') %>%
-    dplyr::mutate(age=parse_number(age_group)) %>% 
+    pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'totN') %>%
+    mutate(age=parse_number(age_group)) %>% 
     mutate(weight=totN*20*5.7/1000000) # convert totN to weight/individual in kg
     # dplyr::filter(t>0)
   
   # plot
   plot_out <- rnsn_summ %>%
-    ggplot2::ggplot(ggplot2::aes(t,weight,col=factor(age)))+
-    ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
+    ggplot(aes(t,weight,col=factor(age)))+
+    geom_line()+
+    labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
   
   return(plot_out)
   }
@@ -321,24 +249,24 @@ plot_wage_timeseries <- function(fg){
 # when RN/SN < 2.65 in our model, spawning is reduced
 plot_rn_vs_sn <- function(fg){
   # get the attributes associated with each functional group
-  fg_atts <- grps %>% dplyr::filter(Name==fg)
+  fg_atts <- grps %>% filter(Name==fg)
   
   if(fg_atts$BiomassType!="vertebrate") stop("weight at age only for vertebrates.")
   
   #Extract from the output .nc file the appropriate reserve N time series variables
-  resN_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_ResN",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  resN_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_ResN",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   #Extract from the output .nc file the appropriate structural N time series variables
-  strucN_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_StructN",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  strucN_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_StructN",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   # Get numbers by box
-  abun_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_Nums",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  abun_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_Nums",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   if(nrow(resN_vars)==0) {return("no data.")}
   else {
@@ -352,40 +280,40 @@ plot_rn_vs_sn <- function(fg){
     # multiply and sum to get abundance-weighted mean reserve N
     rn_summ <- purrr::map2(resN,relnums,`*`) %>% 
       purrr::map(apply,MARGIN=3,FUN=sum) %>% # mean reserve N by times
-      dplyr::bind_cols() %>% # bind age groups elements together
+      bind_cols() %>% # bind age groups elements together
       suppressMessages() %>% 
-      purrr::set_names(resN_vars$name) %>% 
-      dplyr::mutate(t=tyrs) %>%
+      set_names(resN_vars$name) %>% 
+      mutate(t=tyrs) %>%
       # pivot to long form
-      tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'resN') %>%
-      dplyr::mutate(age=parse_number(age_group))
+      pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'resN') %>%
+      mutate(age=parse_number(age_group))
       # dplyr::filter(t>0)
     
     # multiply and sum to get abundance-weighted mean structural N
     sn_summ <- purrr::map2(strucN,relnums,`*`) %>% 
       purrr::map(apply,MARGIN=3,FUN=sum) %>% # mean structural N by time
-      dplyr::bind_cols() %>% # bind age groups elements together
+      bind_cols() %>% # bind age groups elements together
       suppressMessages() %>% 
-      purrr:set_names(resN_vars$name) %>% 
-      dplyr::mutate(t=tyrs) %>%
+      set_names(resN_vars$name) %>% 
+      mutate(t=tyrs) %>%
       # pivot to long form
-      tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'strucN') %>%
-      dplyr::mutate(age=parse_number(age_group))
+      pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'strucN') %>%
+      mutate(age=parse_number(age_group))
       # dplyr::filter(t>0)
     
     rn_vs_sn <- rn_summ %>% 
-      dplyr::left_join(sn_summ,by=c('t','age_group','age')) %>% 
-      dplyr::mutate(rnsn=resN/strucN) %>% 
-      dplyr::mutate(wgt=(resN+strucN)*20*5.7/1e6)
+      left_join(sn_summ,by=c('t','age_group','age')) %>% 
+      mutate(rnsn=resN/strucN) %>% 
+      mutate(wgt=(resN+strucN)*20*5.7/1e6)
     
     # plot
     plot_out <- rn_vs_sn %>%
-      ggplot2::ggplot(ggplot2::aes(t,rnsn,col=factor(age)))+
+      ggplot(aes(t,rnsn,col=factor(age)))+
       # geom_point(size=0.5)+
       # geom_smooth(se=F,method="loess",formula="y~x")+
-      ggplot2::geom_line()+
-      ggplot2::geom_hline(yintercept=2.65,col='black',linetype=2)+
-      ggplot2::labs(col="Age Group",y="RN/SN",x="Year",title=paste0(fg_atts$LongName,"\nRN vs. SN"))
+      geom_line()+
+      geom_hline(yintercept=2.65,col='black',linetype=2)+
+      labs(col="Age Group",y="RN/SN",x="Year",title=paste0(fg_atts$LongName,"\nRN vs. SN"))
     
     return(plot_out)
   }
@@ -407,15 +335,15 @@ plot_spatial <- function(fg,plot_type="spdist"){
   ## get the data from the netCDF
   if(btype!="missing"){
     Ndat <- purrr::map(1:length(vn), function(x) ncdf4::ncvar_get(this.nc,vn[x])) %>% 
-      purrr::reduce(`+`)%>% 
-      simFrame::setNA()
+      reduce(`+`)%>% 
+      setNA()
     volumes_arr <- array(data = unlist(volumes),dim = dim(Ndat)[c(1,2)]) # box/layer volumes
     areas_vec <- areas$area
   }
   
   ## do checks on what kind of critter we're talking about and adjust accordingly
   # get the attributes associated with each functional group
-  fg_atts <- grps %>% dplyr::filter(Name==fg)
+  fg_atts <- grps %>% filter(Name==fg)
   fgt <- fg_atts$GroupType # get group type
   
   # if it's a 3D critter like a fish, or it's plankton-like, biomass is N*volume*(5.7*20/10^9), in metric tons
@@ -423,11 +351,11 @@ plot_spatial <- function(fg,plot_type="spdist"){
     
     totbio_by_box <- apply(Ndat*c(volumes_arr)*(5.7*20/10^9),c(2,3),sum,na.rm=T) %>% 
       # multiply by volume of each layer and then sum across layers for each time step and box
-      tibble::as_tibble(.name_repair = "minimal") %>% 
+      as_tibble(.name_repair = "minimal") %>% 
       suppressMessages() %>% 
-      purrr:set_names(as.character(tyrs)) %>% 
-      tidyr::pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
-      dplyr::mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[2],each=dim(Ndat)[3])) # add box identifier back in
+      set_names(as.character(tyrs)) %>% 
+      pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
+      mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[2],each=dim(Ndat)[3])) # add box identifier back in
 
   }
   
@@ -435,9 +363,9 @@ plot_spatial <- function(fg,plot_type="spdist"){
   if(btype=="2D") {
     
     totbio_by_box <- as_tibble(Ndat*areas_vec*(5.7*20/10^9)) %>% # multiply by area of each box
-      purrr::set_names(as.character(tyrs)) %>% 
-      tidyr::pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
-      dplyr::mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[1],each=dim(Ndat)[2])) #  add box identifier back in
+      set_names(as.character(tyrs)) %>% 
+      pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
+      mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[1],each=dim(Ndat)[2])) #  add box identifier back in
   }
   
     # if it's other (like detritus and bacteria), leave it as a density (biomass/total volume), mg N/m^3
@@ -446,11 +374,11 @@ plot_spatial <- function(fg,plot_type="spdist"){
     
     totbio_by_box <- apply(Ndat*c(volumes_arr),c(2,3),sum,na.rm=T) %>% 
       # multiply by volume of each layer and then sum across layers for each time step and box
-      tibble::as_tibble(.name_repair = "minimal") %>% 
+      as_tibble(.name_repair = "minimal") %>% 
       suppressMessages() %>% 
-      purrr::set_names(as.character(tyrs)) %>% 
-      tidyr::pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
-      dplyr::mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[2],each=dim(Ndat)[3])) # add box identifier back in
+      set_names(as.character(tyrs)) %>% 
+      pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
+      mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[2],each=dim(Ndat)[3])) # add box identifier back in
     
   }
   
@@ -466,12 +394,12 @@ plot_spatial <- function(fg,plot_type="spdist"){
     # if we want spatial distribution output, calculate
     # mean proportion of total biomass in each box, across time
     spdist <- totbio_by_box %>% 
-      dplyr::left_join(areas,by='b') %>% 
-      dplyr::mutate(total=sum(biomass),
+      left_join(areas,by='b') %>% 
+      mutate(total=sum(biomass),
              dens_sqkm=biomass/area*1e06) %>% 
-      dplyr::group_by(b) %>% 
-      dplyr::summarise(meandens=mean(dens_sqkm)) %>% # relative proportion in each box
-      dplyr::ungroup()
+      group_by(b) %>% 
+      summarise(meandens=mean(dens_sqkm)) %>% # relative proportion in each box
+      ungroup()
     
     # add spatial info and plot
     spdist_sf <- spdist %>% 
@@ -479,13 +407,13 @@ plot_spatial <- function(fg,plot_type="spdist"){
       st_as_sf()
     
     # bounding box
-    bbox <- sf::st_bbox(spdist_sf)
-    out_plot <- ggplot2::ggplot()+
-      ggplot2::geom_sf(data=spdist_sf,ggplot2::aes(fill=meandens),col=NA)+
-      ggplot2::scale_fill_viridis()+
-      ggplot2::geom_sf(data=coaststates,fill='gray50')+
-      ggplot2::coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))+
-      ggplot2::labs(fill="Biomass Density\n(tons/sq. km)",title=paste0(fg_atts$LongName,"\nDistribution"))
+    bbox <- st_bbox(spdist_sf)
+    out_plot <- ggplot()+
+      geom_sf(data=spdist_sf,aes(fill=meandens),col=NA)+
+      scale_fill_viridis()+
+      geom_sf(data=coaststates,fill='gray50')+
+      coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))+
+      labs(fill="Biomass Density\n(tons/sq. km)",title=paste0(fg_atts$LongName,"\nDistribution"))
   }
   
   # if we want COG timeseries, do a slightly different calculation
@@ -494,23 +422,23 @@ plot_spatial <- function(fg,plot_type="spdist"){
     # assign biomass in each time to the "inside points" from Atlantis, then calc a weighted mean COG
     cogts <- totbio_by_box %>% 
       # join spatial data
-      dplyr::left_join(emocc_sf,by=c('b'='box_id')) %>% 
+      left_join(emocc_sf,by=c('b'='box_id')) %>% 
       dplyr::select(t,b,biomass,insideX,insideY) %>% 
       
       # group by time step and calculate a COG weighted by biomass
-      dplyr::group_by(t) %>% 
-      dplyr::summarise(cogX=weighted.mean(insideX,w=biomass),cogY=weighted.mean(insideY,w=biomass))
+      group_by(t) %>% 
+      summarise(cogX=weighted.mean(insideX,w=biomass),cogY=weighted.mean(insideY,w=biomass))
       # filter(t>0)
       
     # plot as non-spatial time series
     # calculate total range in north and east directions to add as an annotation to the plot
     out_plot <- cogts %>%
-      tidyr::pivot_longer(contains('cog'),names_to="direction",values_to="meters") %>% 
-      dplyr::mutate(direction=ifelse(direction=="cogX","eastings","northings")) %>% 
-      ggplot2::ggplot(ggplot2::aes(t,meters/1000))+
-      ggplot2::geom_line()+
-      ggplot2::labs(x="Year",y="Km",title=paste0(fg_atts$LongName,"\nCenter-of-Gravity"))+
-      ggplot2::facet_wrap(~direction,ncol=1,scales="free_y")
+      pivot_longer(contains('cog'),names_to="direction",values_to="meters") %>% 
+      mutate(direction=ifelse(direction=="cogX","eastings","northings")) %>% 
+      ggplot(aes(t,meters/1000))+
+      geom_line()+
+      labs(x="Year",y="Km",title=paste0(fg_atts$LongName,"\nCenter-of-Gravity"))+
+      facet_wrap(~direction,ncol=1,scales="free_y")
     
   }
   return(out_plot)
@@ -526,7 +454,7 @@ plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, years){
   
   #print(FG_code)
   dietsAll %>%
-    dplyr::filter(Predator==FG_code) -> subDiet
+    filter(Predator==FG_code) -> subDiet
   
   #print(nrow(subDiet))
   
@@ -539,20 +467,20 @@ plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, years){
   
   subDiet %>%
     reshape2::melt(id.vars = c("Time", "Predator", "Cohort"), measure.vars=selec_prey) %>%
-    dplyr::filter(Time%in%as.character(c((years-2013)*365))) %>%
-    ggplot2::ggplot(ggplot2::aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
-    ggplot2::geom_area(stat="identity")+
-    ggplot2::scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
-    ggplot2::scale_colour_manual(values=getPalette(colourCount),name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
-    ggplot2::facet_wrap(~paste("Age",Cohort))+
-    ggplot2::labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
+    filter(Time%in%as.character(c((years-2013)*365))) %>%
+    ggplot(aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
+    geom_area(stat="identity")+
+    scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
+    scale_colour_manual(values=getPalette(colourCount),name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
+    facet_wrap(~paste("Age",Cohort))+
+    labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
          y="Diet proportions (%)", x = "Years",fill = "Prey",
          color="Prey")+
     theme(legend.position='bottom')-> dietplot
   
       #return(dietplot)
   }else{
-    dietplot <- ggplot2::ggplot() + ggplot2::annotate(geom="text", x = 4, y = 25, label = "plot could not be produced - check the diet output files") + theme_void()
+    dietplot <- ggplot() + annotate(geom="text", x = 4, y = 25, label = "plot could not be produced - check the diet output files") + theme_void()
     }
   return(dietplot)
     #return("")
@@ -582,20 +510,20 @@ plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
   
   subDiet %>%
     reshape2::melt(id.vars = c("Time", "Predator", "Cohort"), measure.vars=selec_prey) %>%
-    dplyr::filter(Time%in%as.character(c((years-2013)*365))) %>%
-    ggplot2::ggplot(ggplot2::aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
-    ggplot2::geom_area(stat="identity")+
-    ggplot2::scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
+    filter(Time%in%as.character(c((years-2013)*365))) %>%
+    ggplot(aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
+    geom_area(stat="identity")+
+    scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
     scale_colour_manual(values=getPalette(colourCount),name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
-    ggplot2::facet_wrap(~paste("Age",Cohort))+
-    ggplot2::labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
+    facet_wrap(~paste("Age",Cohort))+
+    labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
          y="Diet proportions (%)", x = "Years",fill = "Prey",
          color="Prey")+
     theme(legend.position='bottom')-> dietplot
   
       #return(dietplot)
   }else{
-    dietplot <- ggplot2::ggplot() + ggplot2::annotate(geom="text", x = 4, y = 25, label = "plot could not be produced - check the diet output files") + theme_void()
+    dietplot <- ggplot() + annotate(geom="text", x = 4, y = 25, label = "plot could not be produced - check the diet output files") + theme_void()
     }
   return(dietplot)
     #return("")
@@ -603,45 +531,45 @@ plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
 }
 ```
 
-#CONTINUE HERE
+
 ```{r calc plots,warning=FALSE,message=F}
 # Here we calculate and store the actual plots
 
 # abundance
 tic("Abundance plots: ")
-verts <- grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% pluck('Name')
+verts <- grps %>% filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% pluck('Name')
 verts_n_at_a <- purrr::map(verts,~plot_abun(.))
-verts_names <- grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% purrr::pluck('LongName')
+verts_names <- grps %>% filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% pluck('LongName')
 toc()
 
 # biomass
-tictoc::tic("Biomass plots: ")
+tic("Biomass plots: ")
 biomass_timeseries_list <- purrr::map(grps$Name,~plot_biomass(.))
-all_grp_names <- grps %>% purrr::pluck('LongName')
-tictoc::toc()
+all_grp_names <- grps %>% pluck('LongName')
+toc()
 
 # weight at age
-tictoc::tic("Weight at age plots: ")
+tic("Weight at age plots: ")
 verts_wage <- purrr::map(verts,~plot_wage_timeseries(.))
-tictoc::toc()
+toc()
 
 # weight at age
-tictoc::tic("RN vs. SN plots: ")
+tic("RN vs. SN plots: ")
 verts_rnsn <- purrr::map(verts,~plot_rn_vs_sn(.))
-tictoc::toc()
+toc()
 
 #spatial
-tictoc::tic("Spatial plots: ")
+tic("Spatial plots: ")
 spdist_plots <- purrr::map(grps$Name,~plot_spatial(.))
 cog_plots <- purrr::map(grps$Name,~plot_spatial(.,plot_type="cog"))
-tictoc::toc()
+toc()
 
 #diets
-tictoc::tic("Diet plots: ")
+tic("Diet plots: ")
 diets_to_plot<-grps$Name[grps$IsPredator==1&grps$IsTurnedOn==1]
 diets_names <- grps$LongName[grps$IsPredator==1&grps$IsTurnedOn==1]
 diet_plots <- purrr::map(diets_to_plot, plot_Diets, dietsAll=diet_check, threshold=0, years="all")
-tictoc::toc()
+toc()
 ```
 
 # Abundance Timeseries {.tabset .tabset-pills}
@@ -734,9 +662,9 @@ plot_wage_timeseries_old <- function(fg){
   if(fg_atts$BiomassType!="vertebrate") stop("weight at age only for vertebrates.")
   
   #Extract from the output .nc file the appropriate reserve N time series variables
-  resN_vars <- tidync::hyper_vars(out) %>% # all variables in the .nc file active grid
-    dplyr::filter(grepl("_ResN",name)) %>% # filter for abundance variables
-    dplyr::filter(grepl(fg,name)) # filter for specific functional group
+  resN_vars <- hyper_vars(out) %>% # all variables in the .nc file active grid
+    filter(grepl("_ResN",name)) %>% # filter for abundance variables
+    filter(grepl(fg,name)) # filter for specific functional group
   
   if(nrow(resN_vars)==0) {return("no data.")}
   else {
@@ -746,21 +674,21 @@ plot_wage_timeseries_old <- function(fg){
     lapply(na_if,y=0) %>% 
     lapply(setNA) %>%
     purrr::map(apply,MARGIN=3,FUN=mean,na.rm=T) %>% # mean reserve N by time
-    dplyr::bind_cols() %>% 
+    bind_cols() %>% 
     suppressMessages() %>% 
-    purrr::set_names(resN_vars$name) %>% 
-    dplyr::mutate(t=tyrs)
+    set_names(resN_vars$name) %>% 
+    mutate(t=tyrs)
   resN2 <- resN1 %>%
-    tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'resN') %>%
-    dplyr::mutate(age=parse_number(age_group)) %>% 
-    dplyr::mutate(weight=resN*20*5.7*(3.65/2.65)/1000000)   # convert ResN to weight/individual
+    pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'resN') %>%
+    mutate(age=parse_number(age_group)) %>% 
+    mutate(weight=resN*20*5.7*(3.65/2.65)/1000000)   # convert ResN to weight/individual
     # dplyr::filter(t>0)
   
   # plot
   plot_out <- resN2 %>%
-    ggplot2::ggplot(ggplot2::aes(t,weight,col=factor(age)))+
-    ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
+    ggplot(aes(t,weight,col=factor(age)))+
+    geom_line()+
+    labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
   
   return(plot_out)
   }
