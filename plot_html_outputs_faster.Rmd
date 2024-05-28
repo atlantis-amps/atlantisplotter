@@ -46,12 +46,14 @@ thisfolder <- "outputFolder"
 thisbgmfile <- "PugetSound_89b_NAD83.bgm"
 thesecountries <- c('Canada','United States') # Natural Earth regions to use as background
 outdietfile <- "AMPS_OUTDietCheck.txt"
+#functional groups csv files should have colnames Code IsTurnedOn Name `Long Name` GroupType
 groups_csv <- "PugetSoundAtlantisFunctionalGroups_salmon_rectype4_bf.csv"
 thisoutncfile <- "AMPS_OUT.nc"
-thistime <- 365
+startyear <- 2011 #model start year, used for diets
+timeperiod <- 73 #output frequency, used for diets
 ```
 
-```{r spatial data,include=F,echo=F}
+```{r spatial data, include=FALSE}
 # file name here of downloaded .bgm file from current Atlantis model
 
 # IF RUNNING AS PART OF MANAGE_ATLANTIS_RUNS, THE source.dir should be inherited here
@@ -69,33 +71,42 @@ coaststates <- ne_countries(continent="North America",returnclass = 'sf') %>%
   filter(name %in% c('Canada','United States','Mexico'))
 ```
 
-```{r functional groups table,include=F,echo=F,message=F}
+```{r functional groups table, message=FALSE, include=FALSE}
 # grps <- read_csv(here::here(dir_input,'CalCurrentV4Groups_Dec2022.csv')) %>% mutate(Code=GroupType) %>% mutate(GroupType=InvertType)
-grps <- read_csv(here::here(thisfolder,groups_csv)) %>% dplyr::mutate(Code=GroupType) 
+fgrps <- read_csv(here::here(thisfolder,groups_csv)) %>% 
+  dplyr::select(Code,IsTurnedOn,Name,`Long Name`,GroupType, IsPredator)
+
+fun_grps <- fgrps %>% 
+  dplyr::mutate(Code=GroupType) 
 
 # set up a functional group types table
-vertebrate_groups <- grps %>% 
+vertebrate_groups <- fun_grps %>% 
   dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% 
   dplyr::mutate(BiomassType="vertebrate")
 
-plankton_groups <- grps %>% 
+plankton_groups <- fun_grps %>% 
   dplyr::filter(GroupType %in% c("PWN",'CEP','LG_ZOO','MED_ZOO','SM_ZOO','LG_PHY','SM_PHY')) %>% 
   dplyr::mutate(BiomassType="plankton")
 
-bottom_groups <- grps %>% 
+bottom_groups <- fun_grps %>% 
   dplyr::filter(GroupType %in% c("MOB_EP_OTHER",'SED_EP_FF','SED_EP_OTHER','SEAGRASS','PHYTOBEN')) %>% 
   dplyr::mutate(BiomassType="2D")
 
-other_groups <- grps %>% 
+other_groups <- fun_grps %>% 
   dplyr::filter(GroupType %in% c("LG_INF","MICROPHTYBENTHOS","SED_BACT","PL_BACT","SM_INF","CARRION","LAB_DET","REF_DET"))%>% 
   dplyr::mutate(BiomassType="other")
 
 biomass_groups <- dplyr::bind_rows(vertebrate_groups,plankton_groups,bottom_groups,other_groups)
 
 # add to grps df
-grps <- grps %>% 
+grps <- fun_grps %>% 
   dplyr::left_join(biomass_groups) %>% 
   filter(IsTurnedOn==1)
+
+pred_groups <- fgrps %>% dplyr::filter(!GroupType %in% c("SM_PHY","CARRION","LAB_DET","PL_BACT","SED_BACT","PHYTOBEN","SEAGRASS")) %>%   
+  filter(IsTurnedOn==1 & IsPredator==1) %>% 
+dplyr::select(Name, Code, `Long Name`)
+
 ```
 
 ```{r load atlantis output,include=F,echo=F}
@@ -111,14 +122,14 @@ this.nc <- ncdf4::nc_open(out_fl)
 
 # volumes of each layer
 volumes <- out %>% 
-  tidync::hyper_filter(t=t>365) %>% #tidync::hyper_filter(t=t==0) 
+  tidync::hyper_filter(t=t>timeperiod) %>% #tidync::hyper_filter(t=t==0) 
   tidync::hyper_tibble(select_var="volume") %>% 
   dplyr::select(-t)
 
 # time dimension
 ts <- ncdf4::ncvar_get(this.nc,varid = "t") %>% 
   as.numeric
-tyrs <- ts/(60*60*24*365)
+tyrs <- ts/(60*60*24*timeperiod)
 
 # area of each box is the same as volume of the deepest depth layer, because the dz of that layer is 1
 areas <- volumes %>% 
@@ -179,7 +190,7 @@ plot_abun <- function(fg){
     # filter(t>0) %>% # remove plotting artifact
     ggplot2::ggplot(ggplot2::aes(t,abun/1e6,col=factor(age)))+
     ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Numbers (Millions)",x="Year",title=paste0(fg_atts$LongName,"\nNumbers-at-Age"))
+    ggplot2::labs(col="Age Group",y="Numbers (Millions)",x="Year",title=paste0(fg_atts$`Long Name`,"\nNumbers-at-Age"))
   
   return(plot_out)
   
@@ -252,7 +263,7 @@ plot_biomass <- function(fg){
     # filter(t>0) %>% # remove plotting artifact
     ggplot2::ggplot(ggplot2::aes(t,biomass))+
     ggplot2::geom_line()+
-    ggplot2::labs(y=ylabel,x="Year",title=paste0(fg_atts$LongName,"\nBiomass"))
+    ggplot2::labs(y=ylabel,x="Year",title=paste0(fg_atts$`Long Name`,"\nBiomass"))
   
   return(plot_out)
   
@@ -310,7 +321,7 @@ plot_wage_timeseries <- function(fg){
   plot_out <- rnsn_summ %>%
     ggplot2::ggplot(ggplot2::aes(t,weight,col=factor(age)))+
     ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
+    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$`Long Name`,"\nWeight-at-Age"))
   
   return(plot_out)
   }
@@ -340,8 +351,11 @@ plot_rn_vs_sn <- function(fg){
     dplyr::filter(grepl("_Nums",name)) %>% # filter for abundance variables
     dplyr::filter(grepl(fg,name)) # filter for specific functional group
   
-  if(nrow(resN_vars)==0) {return("no data.")}
-  else {
+  if(nrow(resN_vars)==0) {
+    
+    return("no data.")
+    
+    } else {
     # # Actually pull the data from the .nc
     resN <- purrr::map(resN_vars$name,ncdf4::ncvar_get,nc=this.nc) 
     strucN <- purrr::map(strucN_vars$name,ncdf4::ncvar_get,nc=this.nc)
@@ -366,7 +380,7 @@ plot_rn_vs_sn <- function(fg){
       purrr::map(apply,MARGIN=3,FUN=sum) %>% # mean structural N by time
       dplyr::bind_cols() %>% # bind age groups elements together
       suppressMessages() %>% 
-      purrr:set_names(resN_vars$name) %>% 
+      purrr::set_names(resN_vars$name) %>% 
       dplyr::mutate(t=tyrs) %>%
       # pivot to long form
       tidyr::pivot_longer(cols = contains(fg_atts$Name),names_to = 'age_group',values_to = 'strucN') %>%
@@ -385,7 +399,7 @@ plot_rn_vs_sn <- function(fg){
       # geom_smooth(se=F,method="loess",formula="y~x")+
       ggplot2::geom_line()+
       ggplot2::geom_hline(yintercept=2.65,col='black',linetype=2)+
-      ggplot2::labs(col="Age Group",y="RN/SN",x="Year",title=paste0(fg_atts$LongName,"\nRN vs. SN"))
+      ggplot2::labs(col="Age Group",y="RN/SN",x="Year",title=paste0(fg_atts$`Long Name`,"\nRN vs. SN"))
     
     return(plot_out)
   }
@@ -408,7 +422,7 @@ plot_spatial <- function(fg,plot_type="spdist"){
   if(btype!="missing"){
     Ndat <- purrr::map(1:length(vn), function(x) ncdf4::ncvar_get(this.nc,vn[x])) %>% 
       purrr::reduce(`+`)%>% 
-      simFrame::setNA()
+      setNA()
     volumes_arr <- array(data = unlist(volumes),dim = dim(Ndat)[c(1,2)]) # box/layer volumes
     areas_vec <- areas$area
   }
@@ -425,7 +439,7 @@ plot_spatial <- function(fg,plot_type="spdist"){
       # multiply by volume of each layer and then sum across layers for each time step and box
       tibble::as_tibble(.name_repair = "minimal") %>% 
       suppressMessages() %>% 
-      purrr:set_names(as.character(tyrs)) %>% 
+      purrr::set_names(as.character(tyrs)) %>% 
       tidyr::pivot_longer(everything(),names_to="t",values_to="biomass") %>% 
       dplyr::mutate(t=as.numeric(t),b=rep(1:dim(Ndat)[2],each=dim(Ndat)[3])) # add box identifier back in
 
@@ -482,10 +496,10 @@ plot_spatial <- function(fg,plot_type="spdist"){
     bbox <- sf::st_bbox(spdist_sf)
     out_plot <- ggplot2::ggplot()+
       ggplot2::geom_sf(data=spdist_sf,ggplot2::aes(fill=meandens),col=NA)+
-      ggplot2::scale_fill_viridis()+
+      viridis::scale_fill_viridis()+
       ggplot2::geom_sf(data=coaststates,fill='gray50')+
       ggplot2::coord_sf(xlim=c(bbox[1],bbox[3]),ylim=c(bbox[2],bbox[4]))+
-      ggplot2::labs(fill="Biomass Density\n(tons/sq. km)",title=paste0(fg_atts$LongName,"\nDistribution"))
+      ggplot2::labs(fill="Biomass Density\n(tons/sq. km)",title=paste0(fg_atts$`Long Name`,"\nDistribution"))
   }
   
   # if we want COG timeseries, do a slightly different calculation
@@ -509,7 +523,7 @@ plot_spatial <- function(fg,plot_type="spdist"){
       dplyr::mutate(direction=ifelse(direction=="cogX","eastings","northings")) %>% 
       ggplot2::ggplot(ggplot2::aes(t,meters/1000))+
       ggplot2::geom_line()+
-      ggplot2::labs(x="Year",y="Km",title=paste0(fg_atts$LongName,"\nCenter-of-Gravity"))+
+      ggplot2::labs(x="Year",y="Km",title=paste0(fg_atts$`Long Name`,"\nCenter-of-Gravity"))+
       ggplot2::facet_wrap(~direction,ncol=1,scales="free_y")
     
   }
@@ -518,15 +532,15 @@ plot_spatial <- function(fg,plot_type="spdist"){
 ```
 
 ```{r diets fxn, include=F,echo=F}
-plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, years){
+plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, yearsselected){
   
-  if(years=="all"){years<-2013+unique(dietsAll$Time)/365}
+  if(yearsselected=="all"){theseyears<-startyear+unique(dietsAll$Time)/timeperiod}
   
-  FG_code<-grps$Code[grps$Name==FG_to_plot]
+  FG_code<-pred_groups$Code[pred_groups$Name==FG_to_plot]
   
   #print(FG_code)
-  dietsAll %>%
-    dplyr::filter(Predator==FG_code) -> subDiet
+  subDiet<- dietsAll %>%
+    dplyr::filter(Predator==FG_code)
   
   #print(nrow(subDiet))
   
@@ -537,18 +551,23 @@ plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, years){
   colourCount = length(selec_prey)
   getPalette = colorRampPalette(brewer.pal(9, "Set1"))
   
-  subDiet %>%
-    reshape2::melt(id.vars = c("Time", "Predator", "Cohort"), measure.vars=selec_prey) %>%
-    dplyr::filter(Time%in%as.character(c((years-2013)*365))) %>%
-    ggplot2::ggplot(ggplot2::aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
+thisdietdata <- subDiet %>%
+    reshape2::melt(id.vars = c("Time", "Predator", "Cohort"), measure.vars=selec_prey)   %>% 
+  mutate(variable = as.factor(variable)) %>% 
+  left_join(fgrps, by = c("variable" = "Code"))
+
+
+dietplot <- thisdietdata %>% 
+    dplyr::filter(Time%in%as.character(c((theseyears-startyear)*timeperiod))) %>%
+    ggplot2::ggplot(ggplot2::aes(x=startyear+(Time/timeperiod),y=value*100,fill=`Long Name`, color=`Long Name`))+
     ggplot2::geom_area(stat="identity")+
-    ggplot2::scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
-    ggplot2::scale_colour_manual(values=getPalette(colourCount),name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
+    ggplot2::scale_fill_manual(values=getPalette(colourCount), name = "Prey")+
+    ggplot2::scale_colour_manual(values=getPalette(colourCount),name = "Prey")+
     ggplot2::facet_wrap(~paste("Age",Cohort))+
-    ggplot2::labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
+    ggplot2::labs(title= paste("Diet of ",pred_groups$`Long Name`[pred_groups$Name==FG_to_plot]),
          y="Diet proportions (%)", x = "Years",fill = "Prey",
          color="Prey")+
-    theme(legend.position='bottom')-> dietplot
+    theme(legend.position='bottom')
   
       #return(dietplot)
   }else{
@@ -561,15 +580,15 @@ plot_Diets<-function(dietsAll, FG_to_plot, threshold=0, years){
 ```
 
 ```{r,eval=F}
-plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
+plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, yearsselected){
   
-  if(years=="all"){years<-2013+unique(dietsAll$Time)/365}
+  if(yearsselected=="all"){theseyears<-startyear+unique(dietsAll$Time)/timeperiod}
   
-  FG_code<-grps$Code[grps$Name==FG_to_plot]
+  FG_code<-pred_groups$Code[pred_groups$Name==FG_to_plot]
   
   #print(FG_code)
-  dietsAll %>%
-    dplyr::select(Time,Predator,all_of(FG_code)) -> subDiet
+  subDiet <- dietsAll %>%
+    dplyr::select(Time,Predator,all_of(FG_code)) 
   
   #print(nrow(subDiet))
   
@@ -582,13 +601,13 @@ plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
   
   subDiet %>%
     reshape2::melt(id.vars = c("Time", "Predator", "Cohort"), measure.vars=selec_prey) %>%
-    dplyr::filter(Time%in%as.character(c((years-2013)*365))) %>%
-    ggplot2::ggplot(ggplot2::aes(x=2013+(Time/365),y=value*100,fill=variable, color=variable))+
+    dplyr::filter(Time%in%as.character(c((theseyears-startyear)*timeperiod))) %>%
+    ggplot2::ggplot(ggplot2::aes(x=startyear+(Time/timeperiod),y=value*100,fill=variable, color=variable))+
     ggplot2::geom_area(stat="identity")+
     ggplot2::scale_fill_manual(values=getPalette(colourCount), name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
     scale_colour_manual(values=getPalette(colourCount),name = "Prey", labels = grps$Code[grps$Code%in%selec_prey])+
     ggplot2::facet_wrap(~paste("Age",Cohort))+
-    ggplot2::labs(title= paste("Diet of ",grps$LongName[grps$Name==FG_to_plot]),
+    ggplot2::labs(title= paste("Diet of ",grps$`Long Name`[grps$Name==FG_to_plot]),
          y="Diet proportions (%)", x = "Years",fill = "Prey",
          color="Prey")+
     theme(legend.position='bottom')-> dietplot
@@ -603,7 +622,7 @@ plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
 }
 ```
 
-#CONTINUE HERE
+
 ```{r calc plots,warning=FALSE,message=F}
 # Here we calculate and store the actual plots
 
@@ -611,13 +630,13 @@ plot_Preds<-function(dietsAll, FG_to_plot, threshold=0, years){
 tic("Abundance plots: ")
 verts <- grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% pluck('Name')
 verts_n_at_a <- purrr::map(verts,~plot_abun(.))
-verts_names <- grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% purrr::pluck('LongName')
+verts_names <- grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% purrr::pluck('Long Name')
 toc()
 
 # biomass
 tictoc::tic("Biomass plots: ")
 biomass_timeseries_list <- purrr::map(grps$Name,~plot_biomass(.))
-all_grp_names <- grps %>% purrr::pluck('LongName')
+all_grp_names <- grps %>% purrr::pluck('Long Name')
 tictoc::toc()
 
 # weight at age
@@ -638,9 +657,9 @@ tictoc::toc()
 
 #diets
 tictoc::tic("Diet plots: ")
-diets_to_plot<-grps$Name[grps$IsPredator==1&grps$IsTurnedOn==1]
-diets_names <- grps$LongName[grps$IsPredator==1&grps$IsTurnedOn==1]
-diet_plots <- purrr::map(diets_to_plot, plot_Diets, dietsAll=diet_check, threshold=0, years="all")
+diets_to_plot<-pred_groups$Name
+diets_names <- pred_groups$`Long Name`
+diet_plots <- purrr::map(diets_to_plot, plot_Diets, dietsAll=diet_check, threshold=0.9, yearsselected="all")
 tictoc::toc()
 ```
 
@@ -716,7 +735,7 @@ for(i in 1:length(all_grp_names)){
 # Diet Timeseries {.tabset .tabset-pills}
 
 ```{r diets,fig.height=6,fig.width=8,results='asis'}
-for(i in 1:length(diets_to_plot)){
+for(i in 1:length(diet_plots)){
   cat("  \n##",  diets_names[i],"  \n")
   print(diet_plots[[i]])
   cat("  \n")
@@ -760,7 +779,7 @@ plot_wage_timeseries_old <- function(fg){
   plot_out <- resN2 %>%
     ggplot2::ggplot(ggplot2::aes(t,weight,col=factor(age)))+
     ggplot2::geom_line()+
-    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$LongName,"\nWeight-at-Age"))
+    ggplot2::labs(col="Age Group",y="Wet Weight per Individual (kg)",x="Year",title=paste0(fg_atts$`Long Name`,"\nWeight-at-Age"))
   
   return(plot_out)
   }
