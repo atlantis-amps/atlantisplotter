@@ -9,8 +9,5 @@ get_bgm <- function(thisbgmfile, thisfolder){
   # box_area <- emocc_sf %>% st_set_geometry(NULL) %>%  dplyr::select(box_id,area) %>%
   #   mutate(sqkm=area/1e6)
 
-  # load west coast land for mapping
-  coaststates <- rnaturalearth::ne_countries(continent="North America",returnclass = 'sf') %>%
-    dplyr::filter(name %in% thesecountries)
-  return(bgm)
+  return(emocc_sf)
 }

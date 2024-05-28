@@ -40,7 +40,7 @@ sf_use_s2(FALSE)
 
 ```{r specify files}
 
-#set_options()
+set_options()
 
 thisfolder <- "outputFolder"
 thisbgmfile <- "PugetSound_89b_NAD83.bgm"

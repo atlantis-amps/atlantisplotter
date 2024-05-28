@@ -12,9 +12,11 @@ RoxygenNote: 7.2.3
 Imports: 
     cowplot,
     dplyr,
+    grDevices,
     here,
     magrittr,
-    purr,
+    purrr,
+    readr,
     rbgm,
     RColorBrewer,
     reshape2,
@@ -24,4 +26,5 @@ Imports:
     tictoc,
     tibble,
     tidync,
+    tidyselect,
     viridis

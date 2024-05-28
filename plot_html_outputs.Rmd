@@ -1,0 +1,173 @@
+---
+title: "Atlantis Output Plots"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+  pdf_document:
+    toc: yes
+---
+```{r specify files}
+#set model options
+
+#folder where Atlantis outputs are stored
+thisfolder <- "outputFolder" 
+# Natural Earth regions to use as background for spatial maps
+thesecountries <- c('Canada','United States') 
+
+#names of Atlantis files
+thisbgmfile <- "PugetSound_89b_NAD83.bgm"
+outdietfile <- "AMPS_OUTDietCheck.txt"
+#functional groups csv files should have as colnames: Code IsTurnedOn Name `Long Name` GroupType
+groups_csv <- "PugetSoundAtlantisFunctionalGroups_salmon_rectype4_bf.csv"
+thisoutncfile <- "AMPS_OUT.nc"
+
+#start year of the model and output frequency
+startyear <- 2011 #model start year, used for diets
+timeperiod <- 73 #output frequency, used for diets
+
+#code assumes that non-dynamic polygons are continuous
+ini.pol <- 61 #initial non-dynamic polygon 
+end.pol <- 89 #final non-dynamic polygon
+
+#set threshold for diet plots, proportion of diet composition of predators
+threshold=0.1 #will show all prey that account for more that .1 of diet of predator
+```
+
+```{r spatial data, include=FALSE}
+devtools::load_all()
+
+set_options()
+
+import::from(dplyr, "mutate", "select","filter")
+
+#extract bgm
+emocc_sf <- get_bgm(thisbgmfile, thisfolder)
+#load atlantis files
+atlantis_outputs <- load_output(thisfolder, thisoutncfile, timeperiod)
+#get group information
+grp_list <-get_groups(groups_csv, thisfolder)
+
+```
+
+
+```{r calc plots,warning=FALSE,message=F}
+# Here we calculate and store the actual plots
+
+# abundance
+tictoc::tic("Abundance plots: ")
+verts <- grp_list$grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% purrr::pluck('Name')
+verts_n_at_a <- purrr::map(verts,~plot_abun(., grp_list, atlantis_outputs, ini.pol, end.pol))
+verts_names <- grp_list$grps %>% dplyr::filter(GroupType%in%c("FISH","SHARK","BIRD","MAMMAL")) %>% purrr::pluck('Long Name')
+tictoc::toc()
+
+# biomass
+tictoc::tic("Biomass plots: ")
+biomass_timeseries_list <- purrr::map(grp_list$grps$Name,~plot_biomass(., grp_list, atlantis_outputs, ini.pol, end.pol))
+all_grp_names <- grp_list$grps %>% purrr::pluck('Long Name')
+tictoc::toc()
+
+# weight at age
+tictoc::tic("Weight at age plots: ")
+verts_wage <- purrr::map(verts,~plot_wage_timeseries(., grp_list, atlantis_outputs))
+tictoc::toc()
+
+# weight at age
+tictoc::tic("RN vs. SN plots: ")
+verts_rnsn <- purrr::map(verts,~plot_rn_vs_sn(., grp_list, atlantis_outputs))
+tictoc::toc()
+
+#spatial
+tictoc::tic("Spatial plots: ")
+spdist_plots <- purrr::map(grp_list$grps$Name,~plot_spatial(.,spatial_plot_type="spdist", grp_list, atlantis_outputs, emocc_sf))
+cog_plots <- purrr::map(grp_list$grps$Name,~plot_spatial(., spatial_plot_type="cog", grp_list, atlantis_outputs, emocc_sf)) 
+tictoc::toc()
+
+
+#diets
+tictoc::tic("Diet plots: ")
+diets_to_plot <- grp_list$pred_groups$Name
+diets_names <- grp_list$pred_groups$`Long Name`
+diet_plots <- purrr::map(diets_to_plot, plot_Diets, dietsAll=atlantis_outputs$diet_check, threshold, yearsselected="all", grp_list, atlantis_outputs, startyear)
+tictoc::toc()
+```
+
+# Abundance Timeseries {.tabset .tabset-pills}
+
+```{r abun,fig.height=6,fig.width=8,results='asis'}
+if(length(verts_n_at_a)>0){
+  for(i in 1:length(verts_n_at_a)){
+    cat("  \n##",  verts_names[i],"  \n")
+    print(verts_n_at_a[[i]]) 
+    cat("  \n")
+  }
+}
+
+```
+
+# Biomass Timeseries {.tabset .tabset-pills}
+
+```{r biomass,fig.height=6,fig.width=8,results='asis'}
+for(i in 1:length(all_grp_names)){
+  cat("  \n##",  all_grp_names[i],"  \n")
+  print(biomass_timeseries_list[[i]]) 
+  cat("  \n")
+}
+```
+
+# Weight at Age {.tabset .tabset-pills}
+
+```{r wage,fig.height=6,fig.width=8,results='asis'}
+if(length(verts_n_at_a)>0){
+  for(i in 1:length(verts_wage)){
+    cat("  \n##",  verts_names[i],"  \n")
+    print(verts_wage[[i]]) 
+    cat("  \n")
+  }
+}
+```
+
+# Reserve versus Structural N {.tabset .tabset-pills}
+
+```{r rnsn,fig.height=6,fig.width=8,results='asis'}
+if(length(verts_n_at_a)>0){
+  for(i in 1:length(verts_rnsn)){
+    cat("  \n##",  verts_names[i],"  \n")
+    print(verts_rnsn[[i]]) 
+    cat("  \n")
+  }
+}
+```
+
+# Spatial Plots
+
+## Mean Spatial Distribution {.tabset .tabset-pills}
+
+```{r spdist,fig.height=8,fig.width=6,results='asis'}
+for(i in 1:length(all_grp_names)){
+  cat("  \n###",  all_grp_names[i],"  \n")
+  print(spdist_plots[[i]]) 
+  cat("  \n")
+}
+```
+
+## Center of Gravity {.tabset .tabset-pills}
+
+```{r cog,fig.height=4,fig.width=6,results='asis'}
+for(i in 1:length(all_grp_names)){
+  cat("  \n###",  all_grp_names[i],"  \n")
+  print(cog_plots[[i]])
+  cat("  \n")
+}
+```
+
+# Diet Timeseries {.tabset .tabset-pills}
+
+```{r diets,fig.height=6,fig.width=8,results='asis'}
+for(i in 1:length(diet_plots)){
+  cat("  \n##",  diets_names[i],"  \n")
+  print(diet_plots[[i]])
+  cat("  \n")
+}
+```
