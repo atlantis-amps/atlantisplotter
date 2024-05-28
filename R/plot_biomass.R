@@ -1,7 +1,7 @@
 plot_biomass <- function(fg, grp_list, atlantis_outputs, ini.pol, end.pol){
 
   grps <- grp_list$grps
-  fg_dimensions <- grp_list$fg_dimensions
+  fg_dimensions <- atlantis_outputs$fg_dimensions
   tyrs <- atlantis_outputs$tyrs
   volumes <- atlantis_outputs$volumes
   this.nc <- atlantis_outputs$this.nc

@@ -8,8 +8,8 @@ output:
   pdf_document:
     toc: yes
 ---
-```{r specify files}
-#set model options
+```{r specify options, include=FALSE}
+#set options
 
 #folder where Atlantis outputs are stored
 thisfolder <- "outputFolder" 
@@ -36,8 +36,7 @@ threshold=0.1 #will show all prey that account for more that .1 of diet of preda
 ```
 
 ```{r spatial data, include=FALSE}
-devtools::load_all()
-
+library("atlantisplotter")
 set_options()
 
 import::from(dplyr, "mutate", "select","filter")
