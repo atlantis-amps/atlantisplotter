@@ -51,4 +51,4 @@ rsconnect/
 outputFolder/
 .Rproj.user
 
-plot_html_outputs_faster.html
+plot_html_outputs.html
