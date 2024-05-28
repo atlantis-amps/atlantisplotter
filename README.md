@@ -1,5 +1,5 @@
 # atlantisplotter
-###Atlantis plotter code modified for Puget Sound. This plotter code was originally developed by Pierre-Yves Hernvann @pyhernvann and Owen Liu @owenrliu. 
+### Atlantis plotter code modified for Puget Sound. This plotter code was originally developed by Pierre-Yves Hernvann @pyhernvann and Owen Liu @owenrliu. 
 
 Package that allowes creating an RMD document that plots spatial abundance, weight-at-age, biomass, center of gravity, diet and predation for functional groups
 
