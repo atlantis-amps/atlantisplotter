@@ -10,3 +10,4 @@ To use:
 3. Open the RMD file plot_html_outputs.Rmd and modify the parameters in the first section to suit your needs
 4. Save the Atlantis outputs you want to save into an "outputFolder" in the directory you are using
 5. Knit the RMD with `knitr::knit("plot_html_outputs_faster.Rmd")`, it will create an HTML file
+Note the knitting process takes a few minutes
