@@ -15,12 +15,11 @@ plot_biomass <- function(fg, grp_list, atlantis_outputs, ini.pol, end.pol){
   ## get the data from the netCDF
   if(btype!="missing"){
     Ndat <- purrr::map(1:length(vn), function(x) ncdf4::ncvar_get(this.nc,vn[x])) %>%
-      reduce(`+`) %>%
+      purrr::reduce(`+`) %>%
       setNA(ini.pol, end.pol)
     volumes_arr <- array(data = unlist(volumes),dim = dim(Ndat)[c(1,2)]) # box/layer volumes
     areas_vec <- areas$area
   }
-
 
   #
   ## do checks on what kind of critter we're talking about and adjust accordingly

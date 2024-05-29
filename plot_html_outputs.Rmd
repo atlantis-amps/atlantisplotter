@@ -36,7 +36,8 @@ threshold=0.1 #will show all prey that account for more that .1 of diet of preda
 ```
 
 ```{r spatial data, include=FALSE}
-library("atlantisplotter")
+devtools::load_all()
+#library("atlantisplotter")
 set_options()
 
 import::from(dplyr, "mutate", "select","filter")
@@ -170,3 +171,7 @@ for(i in 1:length(diet_plots)){
   cat("  \n")
 }
 ```
+```{r package citations, eval=FALSE, include=FALSE}
+grateful::cite_packages(output = "paragraph", out.dir = ".")
+```
+
